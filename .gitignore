@@ -5,15 +5,23 @@
 *.pyw
 *.pyz
 
-*.json
+# Exclude authentication and credentials
+.env
+credentials.json
+token.pickle
+linkedin_token.json
+temp_credentials.json
 
+# Keep the example env file
+!.env.example
 
+# Logs
 *.log
 
-*.pickle
-
+# OS files
 *.DS_Store
 
+# IDE files
 *.idea
 
 .cursorrules

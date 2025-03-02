@@ -1,3 +1,4 @@
+import os
 import requests
 import json
 import webbrowser
@@ -5,6 +6,10 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 import urllib.parse
 import threading
 import time
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 class OAuthHandler(BaseHTTPRequestHandler):
     """Handler for the OAuth callback."""
@@ -24,11 +29,12 @@ class OAuthHandler(BaseHTTPRequestHandler):
             self.wfile.write(b'Authorization failed. Please try again.')
 
 class LinkedInAuth:
-    def __init__(self, client_id, client_secret, redirect_uri):
+    def __init__(self, client_id=None, client_secret=None, redirect_uri=None):
         """Initialize with LinkedIn app credentials."""
-        self.client_id = client_id
-        self.client_secret = client_secret
-        self.redirect_uri = redirect_uri
+        # Use provided values or fallback to environment variables
+        self.client_id = client_id or os.getenv("LINKEDIN_CLIENT_ID")
+        self.client_secret = client_secret or os.getenv("LINKEDIN_CLIENT_SECRET")
+        self.redirect_uri = redirect_uri or os.getenv("LINKEDIN_REDIRECT_URI")
         self.access_token = None
         self.person_id = None
     
@@ -131,10 +137,6 @@ class LinkedInAuth:
             return False
 
 if __name__ == "__main__":
-    # Example usage
-    CLIENT_ID = "86kla9ar90sihp"
-    CLIENT_SECRET = "***REMOVED***"  # Replace with your actual client secret
-    REDIRECT_URI = "http://localhost:8000/callback"
-    
-    auth = LinkedInAuth(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI)
+    # Use credentials from environment variables
+    auth = LinkedInAuth()
     auth.authenticate()

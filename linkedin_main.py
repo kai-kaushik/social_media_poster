@@ -1,6 +1,11 @@
+import os
 import json
 import requests
 from linkedin_auth import LinkedInAuth
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 class LinkedInPoster:
     def __init__(self, access_token, person_id):
@@ -72,13 +77,8 @@ class LinkedInPoster:
             return False
 
 def main():
-    # Replace with your LinkedIn application credentials
-    CLIENT_ID = "86kla9ar90sihp"
-    CLIENT_SECRET = "***REMOVED***"  # Replace with your actual client secret
-    REDIRECT_URI = "http://localhost:8000/callback"
-    
-    # Authenticate
-    auth = LinkedInAuth(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI)
+    # Use credentials from environment variables
+    auth = LinkedInAuth()
     if auth.authenticate():
         # Get user input for post content
         message = input("Enter your LinkedIn post message: ")
