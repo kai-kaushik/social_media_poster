@@ -7,7 +7,7 @@
 
 # Exclude authentication and credentials
 .env
-credentials.json
+*.json
 token.pickle
 linkedin_token.json
 temp_credentials.json

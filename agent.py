@@ -148,38 +148,51 @@ async def add_user_context(ctx: RunContext[NewsletterDependencies]) -> str:
 
 
 @newsletter_agent.tool(retries=3)  # Increase retries for this tool
-async def analyze_newsletter_content(ctx: RunContext[NewsletterDependencies]) -> List[Topic]:
+async def analyze_newsletter_content(ctx: RunContext[NewsletterDependencies]) -> PostGenerationResult:
     """
-    Analyze the newsletter content and extract the most interesting topics.
+    Analyze the newsletter content and extract interesting topics.
     
     Returns:
-        List[Topic]: A list of 5-6 interesting topics from the newsletter
+        PostGenerationResult: The extracted topics and generated posts
     """
-    logger.info("Starting to analyze newsletter content")
+    logger.info("Analyzing newsletter content")
     
     try:
+        email_data = ctx.deps.email_data
+        email_body = email_data.get("body", "")
+        email_subject = email_data.get("subject", "Newsletter")
+        email_source = email_data.get("from", "Unknown")
+        
+        logger.info(f"Processing email from {email_source} with subject: {email_subject}")
+        
+        # Use Claude to extract topics
         client = anthropic.Anthropic(
             api_key=os.getenv("ANTHROPIC_API_KEY"),
         )
         
-        email_body = ctx.deps.email_data.get('body', '')
-        email_subject = ctx.deps.email_data.get('subject', 'Newsletter')
-        
-        logger.info(f"Analyzing newsletter with subject: {email_subject}")
-        
-        # Create a message to analyze the content and extract topics
         message = client.messages.create(
             model=CLAUDE_MODEL,
-            max_tokens=1000,
-            temperature=0.2,
-            system="You are an expert at identifying the most interesting and important topics from technology newsletters.",
+            max_tokens=4000,
+            temperature=0.2,  # Lower temperature for more deterministic output
+            system="""
+            You are a professional content analyzer who helps extract interesting topics from newsletters.
+            Your task is to identify the most substantive, thought-provoking topics that would be interesting
+            to share on LinkedIn. Focus on extracting detailed information about each topic.
+            
+            Follow these instructions carefully:
+            1. Read through the newsletter
+            2. Identify 5-6 of the most interesting, substantive topics
+            3. For each topic, extract a title, summary, key points, and why it's relevant
+            4. Return the information in a structured JSON format as specified below
+            """,
             messages=[
                 {
                     "role": "user", 
                     "content": f"""
-                    Analyze this newsletter and identify the 4 most interesting, thought-provoking, or important topics:
+                    Please analyze this newsletter and extract the most interesting topics:
                     
                     Subject: {email_subject}
+                    From: {email_source}
                     
                     {email_body[:90000]}  # Limiting content length for API limits
                     
@@ -227,7 +240,24 @@ async def analyze_newsletter_content(ctx: RunContext[NewsletterDependencies]) ->
         try:
             topics = [Topic(**topic_data) for topic_data in topics_data]
             logger.info(f"Successfully created {len(topics)} Topic objects")
-            return topics[:ctx.deps.max_posts]  # Limit to configured max_posts
+            topics = topics[:ctx.deps.max_posts]  # Limit to configured max_posts
+            
+            # Generate LinkedIn posts for each topic
+            generated_posts = []
+            for topic in topics:
+                post = await generate_linkedin_post(ctx, topic)
+                generated_posts.append(post)
+                
+            # Schedule the posts
+            scheduled_posts = await schedule_posts(ctx, generated_posts)
+            
+            return PostGenerationResult(
+                posts=scheduled_posts,
+                topics=topics,
+                email_subject=email_subject,
+                email_source=email_source
+            )
+            
         except Exception as e:
             logger.error(f"Error creating Topic objects: {e}")
             raise ModelRetry(f"Error creating Topic objects: {str(e)}. Please ensure your JSON structure matches the required schema.")
@@ -236,17 +266,25 @@ async def analyze_newsletter_content(ctx: RunContext[NewsletterDependencies]) ->
         logger.error(f"Error analyzing newsletter content: {e}")
         # Return a fallback topic to prevent complete failure
         logger.info("Returning fallback topic")
-        return [
-            Topic(
-                title="Technology Newsletter Insights",
-                summary="The newsletter covered various technology and industry updates.",
-                key_points=["Technology advancements", "Industry changes", "Future trends"],
-                relevance="Following technology trends is essential for professional development."
-            )
-        ]
+        fallback_topic = Topic(
+            title="Technology Newsletter Insights",
+            summary="The newsletter covered various technology and industry updates.",
+            key_points=["Technology advancements", "Industry changes", "Future trends"],
+            relevance="Following technology trends is essential for professional development."
+        )
+        
+        # Generate a fallback post
+        fallback_post = await generate_linkedin_post(ctx, fallback_topic)
+        scheduled_posts = await schedule_posts(ctx, [fallback_post])
+        
+        return PostGenerationResult(
+            posts=scheduled_posts,
+            topics=[fallback_topic],
+            email_subject=email_data.get("subject", "Newsletter"),
+            email_source=email_data.get("from", "Unknown")
+        )
 
 
-@newsletter_agent.tool(retries=3)  # Increase retries for this tool
 async def generate_linkedin_post(
     ctx: RunContext[NewsletterDependencies], 
     topic: Topic
@@ -425,28 +463,20 @@ async def process_newsletter_and_generate_posts(email_data=None, user_first_name
     logger.info(f"Using Claude model: {CLAUDE_MODEL}")
     logger.info(f"Processing newsletter with subject: {email_data.get('subject', 'Newsletter')}")
     
-    # Run the agent 
     try:
-        from pydantic_ai import capture_run_messages, UnexpectedModelBehavior
+        # Run the agent with dependencies. Using a non-empty prompt
+        logger.info("Running agent to process newsletter")
+        result = await newsletter_agent.run("Process newsletter", deps=deps)
         
-        with capture_run_messages() as messages:
-            try:
-                logger.info("Starting newsletter agent run")
-                result = await newsletter_agent.run(
-                    f"Please analyze this newsletter with subject '{email_data.get('subject', 'Newsletter')}' and generate LinkedIn posts.",
-                    deps=deps
-                )
-                logger.info("Newsletter agent run completed successfully")
-                return result.data
-            except UnexpectedModelBehavior as e:
-                logger.error(f"Model behavior error: {str(e)}")
-                logger.error(f"Cause: {repr(e.__cause__)}")
-                logger.error("Message exchange:")
-                for msg in messages:
-                    logger.error(f"  {msg}")
-                raise ValueError(f"Agent encountered an error: {str(e)}")
+        if not result:
+            logger.error("Agent returned no result")
+            raise ValueError("Failed to process newsletter")
+        
+        # Return the result, which now includes both topics and posts
+        return result
+        
     except Exception as e:
-        logger.error(f"Error running newsletter agent: {e}")
+        logger.error(f"Error running agent: {e}", exc_info=True)
         raise
 
 
@@ -477,7 +507,8 @@ async def main():
     """Main function to run the entire process."""
     try:
         print("🔍 Fetching and analyzing the latest newsletter...")
-        result = await process_newsletter_and_generate_posts(max_posts=1)
+        result_full = await process_newsletter_and_generate_posts(max_posts=1)
+        result = result_full.data
         
         print(f"\n✅ Successfully extracted {len(result.topics)} topics from the email.")
         print(f"✅ Generated {len(result.posts)} LinkedIn posts.\n")
