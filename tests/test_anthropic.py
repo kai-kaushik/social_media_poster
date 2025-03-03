@@ -1,7 +1,11 @@
 import os
 import json
 import logging
+import sys
 from dotenv import load_dotenv
+
+# Add parent directory to path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from agent_flow import extract_topics_with_anthropic, NewsletterContent
 
 # Configure logging

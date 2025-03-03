@@ -4,7 +4,7 @@ import time
 import logging
 import anthropic
 from dotenv import load_dotenv
-from google_main import process_latest_email_from_sender
+from google_api.google_main import process_latest_email_from_sender
 from pydantic import BaseModel, Field
 from typing import List, Optional
 
@@ -296,7 +296,10 @@ def generate_linkedin_post(topic):
         4. Include relevant hashtags (3-5) at the end
         5. Be between 150-200 words
         6. Mention any relevant people, companies, or organizations provided in the references
-        7. End with a thought-provoking question or call to action to encourage engagement
+        7. Avoid common AI LLm generated jargon and be more human like. Avoid phrases like "as we all know" or "in this day and age" or "In this fast-paced world"
+        8. Avoid using "-" in sentences and words like "crossroads" or "Tapestry".
+        8. Remember to not make up sentences like "I spoke to my fellow researches etc. because you arent a researcher.
+        9. Dont use these kind of sentence patterns: "Open source isn't just about sharing code - it's about creating a foundation for collective progress." Dont use the " - " pattern. and Dont use the "isnt about, its about" pattern.
         
         Your output should be ONLY the LinkedIn post text, with no additional formatting or explanation.
         """
@@ -361,7 +364,7 @@ if __name__ == "__main__":
     
     # Set debug=True to see more details
     start_time = time.time()
-    topics_data = process_newsletter(num_topics=1)
+    topics_data = process_newsletter(num_topics=2)
     
     if topics_data and 'topics' in topics_data:
         logger.info(f"Successfully extracted {len(topics_data['topics'])} topics from {topics_data['newsletter_name']}")

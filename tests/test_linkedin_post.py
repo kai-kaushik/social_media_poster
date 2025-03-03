@@ -3,7 +3,11 @@ import time
 import json
 import logging
 import unittest
+import sys
 from dotenv import load_dotenv
+
+# Add parent directory to path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from agent_flow import generate_linkedin_post, LinkedInPost
 
 # Configure logging
@@ -11,7 +15,7 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler("test_linkedin_post.log"),
+        logging.FileHandler("tests/test_linkedin_post.log"),
         logging.StreamHandler()
     ]
 )

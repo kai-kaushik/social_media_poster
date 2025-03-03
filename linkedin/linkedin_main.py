@@ -1,7 +1,7 @@
 import os
 import json
 import requests
-from linkedin_auth import LinkedInAuth
+from linkedin.linkedin_auth import LinkedInAuth
 from dotenv import load_dotenv
 
 # Load environment variables

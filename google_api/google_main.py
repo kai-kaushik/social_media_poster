@@ -1,5 +1,5 @@
 import os
-from gmail_auth import get_gmail_service
+from google_api.gmail_auth import get_gmail_service
 import base64
 from dotenv import load_dotenv
 
