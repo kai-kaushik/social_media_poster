@@ -73,6 +73,9 @@ def test_anthropic_extraction():
                 for point in topic['key_points']:
                     logger.info(f"- {point}")
                 logger.info(f"Thoughts: {topic['thoughts']}")
+                logger.info("References:")
+                for reference in topic['references']:
+                    logger.info(f"- {reference}")
                 logger.info("-" * 50)
                 
         except json.JSONDecodeError:

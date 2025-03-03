@@ -29,12 +29,21 @@ class NewsletterTopic(BaseModel):
     summary: str = Field(description="Brief summary of the topic, 2-3 sentences")
     key_points: List[str] = Field(description="Key points about why this topic is interesting or relevant")
     thoughts: str = Field(description="Personal thoughts that could be shared about this topic")
+    references: List[str] = Field(description="Relevant references like people, companies, or organizations mentioned in relation to this topic")
     
 class NewsletterContent(BaseModel):
     """Model for the extracted newsletter content."""
     newsletter_name: str = Field(description="Name of the newsletter")
     date: str = Field(description="Date of the newsletter")
     topics: List[NewsletterTopic] = Field(description="List of interesting topics from the newsletter")
+
+class LinkedInPost(BaseModel):
+    """Model for a LinkedIn post generated from a newsletter topic."""
+    topic_title: str = Field(description="Title of the topic the post is about")
+    content: str = Field(description="The actual content of the LinkedIn post")
+    generated_at: str = Field(description="Timestamp when the post was generated")
+    scheduled_for: Optional[str] = Field(None, description="Timestamp when the post is scheduled to be published")
+    published: bool = Field(False, description="Whether the post has been published")
     
 def extract_newsletter_content(sender_email=None):
     """
@@ -132,6 +141,9 @@ def extract_topics_with_anthropic(newsletter_content, num_topics=5):
         2. A brief summary (2-3 sentences)
         3. 3-4 key points about why this topic is interesting or relevant
         4. Some personal thoughts that could be shared about this topic
+        5. A list of relevant references (people, companies, organizations, products) mentioned in relation to this topic
+
+        Be sure to extract specific names of people, companies, organizations, and products that are mentioned in the newsletter for each topic. These references are important for providing context and credibility to the LinkedIn posts.
         
         Format your response as valid JSON that matches the following Pydantic model structure:
         
@@ -141,6 +153,7 @@ def extract_topics_with_anthropic(newsletter_content, num_topics=5):
             summary: str
             key_points: List[str]
             thoughts: str
+            references: List[str]
             
         class NewsletterContent(BaseModel):
             newsletter_name: str
@@ -209,49 +222,137 @@ def extract_topics_with_anthropic(newsletter_content, num_topics=5):
 
 def process_newsletter(sender_email=None, num_topics=5):
     """
-    End-to-end function to process a newsletter email and extract topics.
+    Process a newsletter email and extract interesting topics.
     
     Args:
-        sender_email (str, optional): Email address of newsletter sender
-        num_topics (int): Number of topics to extract
+        sender_email (str, optional): Email address of the sender to filter by
+        num_topics (int, optional): Number of topics to extract
         
     Returns:
-        dict: Validated NewsletterContent object as a dictionary
-              Returns None if any stage fails
+        dict: Dictionary containing extracted newsletter content and topics
     """
-    logger.info(f"Starting newsletter processing pipeline for {sender_email or os.getenv('NEWSLETTER_SENDER')}")
-    logger.info(f"Requested {num_topics} topics")
+    logger.info("Starting newsletter processing pipeline")
     
-    # Step 1: Extract newsletter content from email
-    logger.info("Step 1: Extracting newsletter content")
-    newsletter_content = extract_newsletter_content(sender_email)
-    
-    if not newsletter_content:
-        logger.error("Failed to extract newsletter content")
-        return None
-    
-    logger.info(f"Newsletter content extracted: {newsletter_content['newsletter_name']} ({newsletter_content['date']})")
-    
-    # Step 2: Extract topics using Anthropic
-    logger.info("Step 2: Extracting topics with Anthropic")
-    json_result = extract_topics_with_anthropic(newsletter_content, num_topics)
-    
-    if not json_result:
-        logger.error("Failed to extract topics from newsletter")
-        return None
-    
-    logger.debug(f"JSON result length: {len(json_result)} characters")
-    
-    # Parse JSON result
     try:
-        logger.info("Parsing final JSON result")
-        result_dict = json.loads(json_result)
-        logger.info(f"Successfully processed newsletter with {len(result_dict['topics'])} topics")
-        return result_dict
+        # Extract newsletter content
+        newsletter_content = extract_newsletter_content(sender_email)
+        if not newsletter_content:
+            logger.error("Failed to extract newsletter content")
+            return None
+            
+        # Extract topics with Anthropic
+        topics_json = extract_topics_with_anthropic(newsletter_content, num_topics)
+        if not topics_json:
+            logger.error("Failed to extract topics")
+            return None
+            
+        # Parse JSON
+        try:
+            topics_data = json.loads(topics_json)
+            logger.info(f"Successfully extracted {len(topics_data['topics'])} topics")
+            return topics_data
+        except json.JSONDecodeError as e:
+            logger.error(f"Error parsing topics JSON: {str(e)}")
+            return None
+            
+    except Exception as e:
+        logger.error(f"Error in newsletter processing pipeline: {str(e)}", exc_info=True)
+        return None
+
+def generate_linkedin_post(topic):
+    """
+    Generate a LinkedIn post from a newsletter topic using Anthropic's Claude API.
+    
+    Args:
+        topic (dict): A topic dictionary extracted from the newsletter with keys:
+                     title, summary, key_points, thoughts, references
         
-    except json.JSONDecodeError as e:
-        logger.error(f"Failed to decode JSON result: {str(e)}")
-        logger.debug(f"Raw JSON result: {json_result[:500]}...")
+    Returns:
+        LinkedInPost: A Pydantic model containing the LinkedIn post and metadata
+    """
+    logger.info(f"Generating LinkedIn post for topic: {topic['title']}")
+    
+    try:
+        # Initialize Anthropic client
+        api_key = os.getenv("ANTHROPIC_API_KEY")
+        if not api_key:
+            logger.error("ANTHROPIC_API_KEY not found in environment variables")
+            return None
+            
+        logger.debug("Initializing Anthropic client")
+        client = anthropic.Anthropic(api_key=api_key)
+        
+        # Construct prompt for Claude
+        logger.debug("Constructing system prompt for LinkedIn post generation")
+        system_prompt = """
+        You are a professional content writer specializing in creating authentic, engaging LinkedIn posts.
+        Your task is to write a LinkedIn post in first person that sounds like it was written by a real person
+        sharing their thoughts on a topic they found interesting.
+        
+        The post should:
+        1. Be written in a conversational, authentic first-person voice
+        2. Include personal thoughts and opinions on the topic
+        3. Be professionally written but not overly formal
+        4. Include relevant hashtags (3-5) at the end
+        5. Be between 150-200 words
+        6. Mention any relevant people, companies, or organizations provided in the references
+        7. End with a thought-provoking question or call to action to encourage engagement
+        
+        Your output should be ONLY the LinkedIn post text, with no additional formatting or explanation.
+        """
+        
+        # Prepare topic information for the prompt
+        references_text = ", ".join(topic['references']) if topic['references'] else "None specified"
+        
+        user_message = f"""
+        Topic Title: {topic['title']}
+        
+        Summary: {topic['summary']}
+        
+        Key Points:
+        {chr(10).join(f"- {point}" for point in topic['key_points'])}
+        
+        Personal Thoughts: {topic['thoughts']}
+        
+        References (people, companies, organizations): {references_text}
+        
+        Please write an authentic, first-person LinkedIn post about this topic.
+        """
+        
+        logger.debug(f"User message length: {len(user_message)} characters")
+        
+        # Call Anthropic API
+        logger.info("Calling Anthropic API to generate LinkedIn post")
+        start_time = time.time()
+        
+        message = client.messages.create(
+            model="claude-3-5-sonnet-20241022",
+            system=system_prompt,
+            max_tokens=1000,
+            messages=[
+                {"role": "user", "content": user_message}
+            ]
+        )
+        
+        elapsed_time = time.time() - start_time
+        logger.info(f"LinkedIn post generation completed in {elapsed_time:.2f} seconds")
+        
+        # Extract post from response
+        post_content = message.content[0].text.strip()
+        logger.debug(f"Generated LinkedIn post ({len(post_content)} characters)")
+        
+        # Create LinkedInPost object
+        linkedin_post = LinkedInPost(
+            topic_title=topic['title'],
+            content=post_content,
+            generated_at=time.strftime("%Y-%m-%d %H:%M:%S"),
+            published=False
+        )
+        
+        return linkedin_post
+        
+    except Exception as e:
+        logger.error(f"Error generating LinkedIn post: {str(e)}", exc_info=True)
         return None
 
 # Example usage
@@ -260,19 +361,34 @@ if __name__ == "__main__":
     
     # Set debug=True to see more details
     start_time = time.time()
-    result = process_newsletter(num_topics=5)
-    elapsed_time = time.time() - start_time
+    topics_data = process_newsletter(num_topics=1)
     
-    if result:
-        logger.info(f"Successfully extracted {len(result['topics'])} topics from {result['newsletter_name']}")
+    if topics_data and 'topics' in topics_data:
+        logger.info(f"Successfully extracted {len(topics_data['topics'])} topics from {topics_data['newsletter_name']}")
+        
+        # Generate LinkedIn posts for each topic
+        for i, topic in enumerate(topics_data['topics'], 1):
+            logger.info(f"Generating LinkedIn post for topic {i}: {topic['title']}")
+            linkedin_post = generate_linkedin_post(topic)
+            
+            if linkedin_post:
+                print(f"\nLinkedIn Post {i} - {linkedin_post.topic_title}")
+                print(f"Generated at: {linkedin_post.generated_at}")
+                print("-" * 50)
+                print(linkedin_post.content)
+                print("-" * 50)
+                print(f"Status: {'Published' if linkedin_post.published else 'Not published'}")
+                if linkedin_post.scheduled_for:
+                    print(f"Scheduled for: {linkedin_post.scheduled_for}")
+                print()
+            else:
+                logger.error(f"Failed to generate LinkedIn post for topic {i}")
+        
+        elapsed_time = time.time() - start_time
         logger.info(f"Total processing time: {elapsed_time:.2f} seconds")
         
-        for i, topic in enumerate(result['topics'], 1):
-            logger.info(f"Topic {i}: {topic['title']}")
-            print(f"\nTopic {i}: {topic['title']}")
-            print(f"Summary: {topic['summary']}")
     else:
         logger.error("Failed to process newsletter")
         print("Failed to process newsletter")
         
-    logger.info("Newsletter agent completed") 
+    logger.info("Newsletter agent completed")
