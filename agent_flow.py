@@ -16,6 +16,10 @@ from linkedin.linkedin_main import LinkedInPoster
 # Add at the beginning of the file
 parser = argparse.ArgumentParser(description='Process newsletter and create LinkedIn posts')
 parser.add_argument('--quiet', action='store_true', help='Disable console logging')
+parser.add_argument('--topics', type=int, default=5, help='Number of topics to extract (default: 5)')
+parser.add_argument('--days', type=int, default=3, help='Number of days to schedule posts over (default: 3)')
+parser.add_argument('--sender', type=str, help='Email address of the newsletter sender (default: from .env)')
+parser.add_argument('--use-saved', action='store_true', help='Use previously saved posts instead of generating new ones')
 args = parser.parse_args()
 
 # Configure logging
@@ -611,26 +615,150 @@ def process_newsletter_to_scheduled_posts(sender_email=None, num_topics=5, sched
         logger.error(f"Error in end-to-end newsletter processing: {str(e)}", exc_info=True)
         return []
 
+def save_scheduled_posts(posts, filename="scheduled_posts.json"):
+    """
+    Save scheduled LinkedIn posts to a JSON file.
+    
+    Args:
+        posts (List[LinkedInPost]): List of scheduled LinkedIn posts
+        filename (str): Name of the file to save to
+        
+    Returns:
+        bool: True if the posts were saved successfully, False otherwise
+    """
+    logger.info(f"Saving {len(posts)} scheduled posts to {filename}")
+    
+    try:
+        # Convert posts to dictionaries
+        posts_data = [post.dict() for post in posts]
+        
+        # Save to file
+        with open(filename, "w") as f:
+            json.dump(posts_data, f, indent=2)
+            
+        logger.info(f"Successfully saved {len(posts)} posts to {filename}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error saving scheduled posts: {str(e)}")
+        return False
+
+# Add the load_scheduled_posts function
+def load_scheduled_posts(filename="scheduled_posts.json"):
+    """
+    Load scheduled LinkedIn posts from a JSON file.
+    
+    Args:
+        filename (str): Name of the file to load from
+        
+    Returns:
+        List[LinkedInPost]: List of scheduled LinkedIn posts, or empty list if file not found
+    """
+    logger.info(f"Loading scheduled posts from {filename}")
+    
+    try:
+        # Check if file exists
+        if not os.path.exists(filename):
+            logger.warning(f"File {filename} not found")
+            return []
+            
+        # Load from file
+        with open(filename, "r") as f:
+            posts_data = json.load(f)
+            
+        # Convert dictionaries to LinkedInPost objects
+        posts = [LinkedInPost(**post_data) for post_data in posts_data]
+        
+        logger.info(f"Successfully loaded {len(posts)} posts from {filename}")
+        return posts
+        
+    except Exception as e:
+        logger.error(f"Error loading scheduled posts: {str(e)}")
+        return []
+
 # Update the example usage
 if __name__ == "__main__":
     logger.info("Starting newsletter agent")
     
     start_time = time.time()
     
-    # Process newsletter and get scheduled posts
-    scheduled_posts = process_newsletter_to_scheduled_posts(num_topics=2, schedule_days=3)
+    # Either load saved posts or generate new ones
+    if args.use_saved:
+        logger.info("Loading previously saved posts")
+        scheduled_posts = load_scheduled_posts()
+        if not scheduled_posts:
+            logger.warning("No saved posts found. Generating new posts instead.")
+            scheduled_posts = process_newsletter_to_scheduled_posts(
+                sender_email=args.sender,
+                num_topics=args.topics,
+                schedule_days=args.days
+            )
+    else:
+        logger.info("Generating new posts")
+        scheduled_posts = process_newsletter_to_scheduled_posts(
+            sender_email=args.sender,
+            num_topics=args.topics,
+            schedule_days=args.days
+        )
     
     # Display scheduled posts
     if scheduled_posts:
         print("\nScheduled LinkedIn Posts:")
-        print("=" * 50)
+        print("=" * 80)
         for i, post in enumerate(scheduled_posts, 1):
+            status = "PUBLISHED" if post.published else f"Scheduled for: {post.scheduled_for}"
             print(f"{i}. {post.topic_title}")
-            print(f"   Scheduled for: {post.scheduled_for}")
-            print("-" * 50)
+            print(f"   Status: {status}")
+            print("-" * 80)
             print(post.content)
-            print("-" * 50)
-        print("=" * 50)
+            print("-" * 80)
+        print("=" * 80)
+        
+        # Save scheduled posts to file if they were newly generated
+        if not args.use_saved:
+            save_scheduled_posts(scheduled_posts)
+            print(f"Scheduled posts saved to scheduled_posts.json")
+        
+        # Ask user if they want to publish a post immediately
+        while True:
+            try:
+                choice = input(f"\nWould you like to publish a post now? Enter post number (1-{len(scheduled_posts)}) or 'n' to exit: ")
+                
+                if choice.lower() == 'n':
+                    print("Exiting without publishing any posts.")
+                    break
+                
+                post_index = int(choice) - 1
+                if 0 <= post_index < len(scheduled_posts):
+                    selected_post = scheduled_posts[post_index]
+                    
+                    # Check if post is already published
+                    if selected_post.published:
+                        print(f"Post '{selected_post.topic_title}' has already been published.")
+                        continue
+                    
+                    print(f"\nPublishing post: {selected_post.topic_title}")
+                    
+                    # Confirm before publishing
+                    confirm = input("Are you sure you want to publish this post? (y/n): ")
+                    if confirm.lower() == 'y':
+                        success = publish_linkedin_post(selected_post)
+                        if success:
+                            print(f"Successfully published post: {selected_post.topic_title}")
+                            # Update the post in the saved file
+                            selected_post.published = True
+                            save_scheduled_posts(scheduled_posts)
+                            print(f"Updated scheduled_posts.json with published status")
+                        else:
+                            print(f"Failed to publish post: {selected_post.topic_title}")
+                    else:
+                        print("Publication cancelled.")
+                    
+                    break
+                else:
+                    print(f"Invalid selection. Please enter a number between 1 and {len(scheduled_posts)}.")
+            except ValueError:
+                print("Invalid input. Please enter a number or 'n'.")
         
         elapsed_time = time.time() - start_time
         logger.info(f"Total processing time: {elapsed_time:.2f} seconds")
