@@ -10,6 +10,8 @@ from typing import List, Optional
 import random
 from functools import wraps
 import argparse
+from linkedin.linkedin_auth import LinkedInAuth
+from linkedin.linkedin_main import LinkedInPoster
 
 # Add at the beginning of the file
 parser = argparse.ArgumentParser(description='Process newsletter and create LinkedIn posts')
@@ -473,6 +475,91 @@ def schedule_linkedin_posts(posts, days=3):
     logger.info(f"Successfully scheduled {len(scheduled_posts)} posts")
     return scheduled_posts
 
+
+def publish_linkedin_post(post):
+    """
+    Publish a scheduled LinkedIn post using the LinkedIn API.
+    
+    Args:
+        post (LinkedInPost): The post object to publish
+        
+    Returns:
+        bool: True if the post was published successfully, False otherwise
+    """
+    logger.info(f"Publishing LinkedIn post: '{post.topic_title}'")
+    
+    try:
+        # Authenticate with LinkedIn
+        auth = LinkedInAuth()
+        if not auth.authenticate():
+            logger.error("LinkedIn authentication failed")
+            return False
+            
+        # Create poster and publish the post
+        poster = LinkedInPoster(auth.access_token, auth.person_id)
+        result = poster.post_message(post.content)
+        
+        if result:
+            # Update post status
+            post.published = True
+            logger.info(f"Successfully published post '{post.topic_title}' to LinkedIn")
+            return True
+        else:
+            logger.error(f"Failed to publish post '{post.topic_title}' to LinkedIn")
+            return False
+            
+    except Exception as e:
+        logger.error(f"Error publishing LinkedIn post: {str(e)}")
+        return False
+
+def publish_scheduled_posts(posts):
+    """
+    Publish all scheduled LinkedIn posts that are due (scheduled time has passed)
+    and haven't been published yet.
+    
+    Args:
+        posts (List[LinkedInPost]): List of scheduled LinkedIn posts
+        
+    Returns:
+        List[LinkedInPost]: List of posts that were successfully published
+    """
+    logger.info("Checking for scheduled posts due for publishing")
+    
+    published_posts = []
+    current_time = time.time()
+    
+    for post in posts:
+        # Skip already published posts
+        if post.published:
+            continue
+            
+        # Skip posts without a scheduled time
+        if not post.scheduled_for:
+            logger.warning(f"Post '{post.topic_title}' has no scheduled time, skipping")
+            continue
+            
+        # Convert scheduled time string to timestamp
+        try:
+            scheduled_time = time.mktime(time.strptime(post.scheduled_for, "%Y-%m-%d %H:%M:%S"))
+        except ValueError:
+            logger.error(f"Invalid scheduled time format for post '{post.topic_title}': {post.scheduled_for}")
+            continue
+            
+        # Check if it's time to publish
+        if scheduled_time <= current_time:
+            logger.info(f"Post '{post.topic_title}' is due for publishing (scheduled: {post.scheduled_for})")
+            
+            # Publish the post
+            if publish_linkedin_post(post):
+                published_posts.append(post)
+    
+    if published_posts:
+        logger.info(f"Successfully published {len(published_posts)} posts")
+    else:
+        logger.info("No posts were due for publishing")
+        
+    return published_posts
+
 def process_newsletter_to_scheduled_posts(sender_email=None, num_topics=5, schedule_days=3):
     """
     Main function that orchestrates the entire process from fetching email newsletter
@@ -514,8 +601,8 @@ def process_newsletter_to_scheduled_posts(sender_email=None, num_topics=5, sched
             
         logger.info(f"Successfully generated {len(linkedin_posts)} LinkedIn posts")
         
-        # Step 3: Schedule the posts over the specified number of days
-        scheduled_posts = schedule_linkedin_posts(linkedin_posts, days=schedule_days)
+        # Step 3: Schedule the posts
+        scheduled_posts = schedule_linkedin_posts(linkedin_posts, schedule_days)
         logger.info(f"Successfully scheduled {len(scheduled_posts)} posts over {schedule_days} days")
         
         return scheduled_posts
