@@ -404,6 +404,68 @@ def generate_linkedin_post(topic):
         return None
 
 
+def schedule_linkedin_posts(posts, days=3):
+    """
+    Schedule LinkedIn posts over the next specified number of days.
+    
+    Args:
+        posts (List[LinkedInPost]): List of LinkedIn posts to schedule
+        days (int): Number of days to spread the posts over
+        
+    Returns:
+        List[LinkedInPost]: The same posts with scheduled_for timestamps added
+    """
+    if not posts:
+        logger.warning("No posts to schedule")
+        return []
+    
+    logger.info(f"Scheduling {len(posts)} LinkedIn posts over {days} days")
+    
+    # Get current time
+    current_time = time.time()
+    day_seconds = 24 * 60 * 60  # Seconds in a day
+    
+    # Business hours
+    business_hours = [9, 12, 15, 17]  # 9am, 12pm, 3pm, 5pm
+    
+    scheduled_posts = []
+    for i, post in enumerate(posts):
+        # Calculate which day to post (0 to days-1)
+        day_offset = min(i * days // len(posts), days - 1)
+        
+        # Select hour based on position in sequence
+        hour_index = i % len(business_hours)
+        target_hour = business_hours[hour_index]
+        
+        # Get the target day's date
+        target_day = current_time + (day_offset * day_seconds)
+        target_struct = time.localtime(target_day)
+        
+        # Create scheduled time
+        scheduled_time = time.mktime((
+            target_struct.tm_year,
+            target_struct.tm_mon,
+            target_struct.tm_mday,
+            target_hour,
+            0,  # 0 minutes
+            0,  # 0 seconds
+            target_struct.tm_wday,
+            target_struct.tm_yday,
+            target_struct.tm_isdst
+        ))
+        
+        # Format the time
+        formatted_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(scheduled_time))
+        
+        # Update the post
+        post.scheduled_for = formatted_time
+        scheduled_posts.append(post)
+        
+        logger.debug(f"Scheduled post '{post.topic_title}' for {formatted_time}")
+    
+    logger.info(f"Successfully scheduled {len(scheduled_posts)} posts")
+    return scheduled_posts
+
 # Example usage
 if __name__ == "__main__":
     logger.info("Starting newsletter agent")
@@ -416,11 +478,13 @@ if __name__ == "__main__":
         logger.info(f"Successfully extracted {len(topics_data['topics'])} topics from {topics_data['newsletter_name']}")
         
         # Generate LinkedIn posts for each topic
+        linkedin_posts = []
         for i, topic in enumerate(topics_data['topics'], 1):
             logger.info(f"Generating LinkedIn post for topic {i}: {topic['title']}")
             linkedin_post = generate_linkedin_post(topic)
             
             if linkedin_post:
+                linkedin_posts.append(linkedin_post)
                 print(f"\nLinkedIn Post {i} - {linkedin_post.topic_title}")
                 print(f"Generated at: {linkedin_post.generated_at}")
                 print("-" * 50)
@@ -433,6 +497,18 @@ if __name__ == "__main__":
             else:
                 logger.error(f"Failed to generate LinkedIn post for topic {i}")
         
+        # Schedule the posts over the next 3 days
+        if linkedin_posts:
+            scheduled_posts = schedule_linkedin_posts(linkedin_posts)
+            
+            # Display scheduled posts
+            print("\nScheduled LinkedIn Posts:")
+            print("=" * 50)
+            for i, post in enumerate(scheduled_posts, 1):
+                print(f"{i}. {post.topic_title}")
+                print(f"   Scheduled for: {post.scheduled_for}")
+            print("=" * 50)
+        
         elapsed_time = time.time() - start_time
         logger.info(f"Total processing time: {elapsed_time:.2f} seconds")
         
@@ -441,3 +517,4 @@ if __name__ == "__main__":
         print("Failed to process newsletter")
         
     logger.info("Newsletter agent completed")
+
