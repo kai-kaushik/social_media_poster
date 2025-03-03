@@ -617,7 +617,7 @@ def process_newsletter_to_scheduled_posts(sender_email=None, num_topics=5, sched
 
 def save_scheduled_posts(posts, filename="scheduled_posts.json"):
     """
-    Save scheduled LinkedIn posts to a JSON file.
+    Save scheduled LinkedIn posts to a JSON file, appending to existing posts if file exists.
     
     Args:
         posts (List[LinkedInPost]): List of scheduled LinkedIn posts
@@ -629,14 +629,23 @@ def save_scheduled_posts(posts, filename="scheduled_posts.json"):
     logger.info(f"Saving {len(posts)} scheduled posts to {filename}")
     
     try:
-        # Convert posts to dictionaries
-        posts_data = [post.dict() for post in posts]
+        # Convert new posts to dictionaries
+        new_posts_data = [post.dict() for post in posts]
         
-        # Save to file
+        # Load existing posts if file exists
+        existing_posts = []
+        if os.path.exists(filename):
+            with open(filename, "r") as f:
+                existing_posts = json.load(f)
+                
+        # Combine existing and new posts
+        all_posts = existing_posts + new_posts_data
+        
+        # Save combined posts to file
         with open(filename, "w") as f:
-            json.dump(posts_data, f, indent=2)
+            json.dump(all_posts, f, indent=2)
             
-        logger.info(f"Successfully saved {len(posts)} posts to {filename}")
+        logger.info(f"Successfully saved {len(all_posts)} total posts to {filename}")
         return True
         
     except Exception as e:
