@@ -7,6 +7,8 @@ from dotenv import load_dotenv
 from google_api.google_main import process_latest_email_from_sender
 from pydantic import BaseModel, Field
 from typing import List, Optional
+import random
+from functools import wraps
 
 # Configure logging
 logging.basicConfig(
@@ -22,6 +24,46 @@ logger = logging.getLogger("newsletter_agent")
 # Load environment variables
 load_dotenv()
 logger.info("Environment variables loaded")
+
+def retry_anthropic_api(max_retries=3, initial_delay=2):
+    """
+    Decorator that implements retry logic with exponential backoff for Anthropic API calls.
+    Specifically handles 529 Overloaded errors.
+    
+    Args:
+        max_retries (int): Maximum number of retry attempts
+        initial_delay (int): Initial delay in seconds before first retry
+        
+    Returns:
+        The decorated function with retry logic
+    """
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            retries = 0
+            delay = initial_delay
+            
+            while True:
+                try:
+                    return func(*args, **kwargs)
+                except anthropic._exceptions.OverloadedError as e:
+                    retries += 1
+                    if retries > max_retries:
+                        logger.error(f"Max retries ({max_retries}) exceeded for Anthropic API call")
+                        raise e
+                    
+                    # Add jitter to avoid thundering herd problem
+                    jitter = random.uniform(0.8, 1.2)
+                    sleep_time = delay * jitter
+                    
+                    logger.warning(f"Anthropic API overloaded (529). Retrying in {sleep_time:.2f} seconds (attempt {retries}/{max_retries})")
+                    time.sleep(sleep_time)
+                    
+                    # Exponential backoff
+                    delay *= 2
+                    
+        return wrapper
+    return decorator
 
 class NewsletterTopic(BaseModel):
     """Model for a newsletter topic extracted from an email."""
@@ -106,6 +148,7 @@ def extract_newsletter_content(sender_email=None):
         logger.error(f"Error extracting newsletter content: {str(e)}", exc_info=True)
         return None
 
+@retry_anthropic_api(max_retries=2, initial_delay=2)
 def extract_topics_with_anthropic(newsletter_content, num_topics=5):
     """
     Extract interesting topics from newsletter content using Anthropic's Claude API.
@@ -259,6 +302,7 @@ def process_newsletter(sender_email=None, num_topics=5):
         logger.error(f"Error in newsletter processing pipeline: {str(e)}", exc_info=True)
         return None
 
+@retry_anthropic_api(max_retries=2, initial_delay=2)
 def generate_linkedin_post(topic):
     """
     Generate a LinkedIn post from a newsletter topic using Anthropic's Claude API.
@@ -299,7 +343,8 @@ def generate_linkedin_post(topic):
         7. Avoid common AI LLm generated jargon and be more human like. Avoid phrases like "as we all know" or "in this day and age" or "In this fast-paced world"
         8. Avoid using "-" in sentences and words like "crossroads" or "Tapestry".
         8. Remember to not make up sentences like "I spoke to my fellow researches etc. because you arent a researcher.
-        9. Dont use these kind of sentence patterns: "Open source isn't just about sharing code - it's about creating a foundation for collective progress." Dont use the " - " pattern. and Dont use the "isnt about, its about" pattern.
+        9. Don't use these kind of sentence patterns: "Open source isn't just about sharing code - it's about creating a foundation for collective progress." or "here's the catch - ".\
+              Dont use the " - " pattern. and Don't use the "isnt about, its about" or "not only, but also" pattern.
         
         Your output should be ONLY the LinkedIn post text, with no additional formatting or explanation.
         """
@@ -357,6 +402,7 @@ def generate_linkedin_post(topic):
     except Exception as e:
         logger.error(f"Error generating LinkedIn post: {str(e)}", exc_info=True)
         return None
+
 
 # Example usage
 if __name__ == "__main__":
