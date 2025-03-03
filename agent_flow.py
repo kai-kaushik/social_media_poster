@@ -9,17 +9,24 @@ from pydantic import BaseModel, Field
 from typing import List, Optional
 import random
 from functools import wraps
+import argparse
+
+# Add at the beginning of the file
+parser = argparse.ArgumentParser(description='Process newsletter and create LinkedIn posts')
+parser.add_argument('--quiet', action='store_true', help='Disable console logging')
+args = parser.parse_args()
 
 # Configure logging
+handlers = [logging.FileHandler("agent_flow.log")]
+if not args.quiet:
+    handlers.append(logging.StreamHandler())
+
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler("newsletter_agent.log"),
-        logging.StreamHandler()
-    ]
+    handlers=handlers
 )
-logger = logging.getLogger("newsletter_agent")
+logger = logging.getLogger("agent_flow")
 
 # Load environment variables
 load_dotenv()
@@ -466,55 +473,83 @@ def schedule_linkedin_posts(posts, days=3):
     logger.info(f"Successfully scheduled {len(scheduled_posts)} posts")
     return scheduled_posts
 
-# Example usage
+def process_newsletter_to_scheduled_posts(sender_email=None, num_topics=5, schedule_days=3):
+    """
+    Main function that orchestrates the entire process from fetching email newsletter
+    to scheduling LinkedIn posts.
+    
+    Args:
+        sender_email (str, optional): Email address of the sender to filter by.
+                                      If None, uses NEWSLETTER_SENDER from env.
+        num_topics (int, optional): Number of topics to extract from the newsletter.
+        schedule_days (int, optional): Number of days to spread the posts over.
+        
+    Returns:
+        List[LinkedInPost]: List of scheduled LinkedIn posts ready for publishing.
+                           Returns empty list if any step fails.
+    """
+    logger.info("Starting end-to-end newsletter processing pipeline")
+    
+    try:
+        # Step 1: Process newsletter to extract topics
+        topics_data = process_newsletter(sender_email, num_topics)
+        if not topics_data or 'topics' not in topics_data:
+            logger.error("Failed to extract topics from newsletter")
+            return []
+            
+        logger.info(f"Successfully extracted {len(topics_data['topics'])} topics from {topics_data['newsletter_name']}")
+        
+        # Step 2: Generate LinkedIn posts for each topic
+        linkedin_posts = []
+        for topic in topics_data['topics']:
+            linkedin_post = generate_linkedin_post(topic)
+            if linkedin_post:
+                linkedin_posts.append(linkedin_post)
+            else:
+                logger.warning(f"Failed to generate LinkedIn post for topic: {topic['title']}")
+        
+        if not linkedin_posts:
+            logger.error("Failed to generate any LinkedIn posts")
+            return []
+            
+        logger.info(f"Successfully generated {len(linkedin_posts)} LinkedIn posts")
+        
+        # Step 3: Schedule the posts over the specified number of days
+        scheduled_posts = schedule_linkedin_posts(linkedin_posts, days=schedule_days)
+        logger.info(f"Successfully scheduled {len(scheduled_posts)} posts over {schedule_days} days")
+        
+        return scheduled_posts
+        
+    except Exception as e:
+        logger.error(f"Error in end-to-end newsletter processing: {str(e)}", exc_info=True)
+        return []
+
+# Update the example usage
 if __name__ == "__main__":
     logger.info("Starting newsletter agent")
     
-    # Set debug=True to see more details
     start_time = time.time()
-    topics_data = process_newsletter(num_topics=2)
     
-    if topics_data and 'topics' in topics_data:
-        logger.info(f"Successfully extracted {len(topics_data['topics'])} topics from {topics_data['newsletter_name']}")
-        
-        # Generate LinkedIn posts for each topic
-        linkedin_posts = []
-        for i, topic in enumerate(topics_data['topics'], 1):
-            logger.info(f"Generating LinkedIn post for topic {i}: {topic['title']}")
-            linkedin_post = generate_linkedin_post(topic)
-            
-            if linkedin_post:
-                linkedin_posts.append(linkedin_post)
-                print(f"\nLinkedIn Post {i} - {linkedin_post.topic_title}")
-                print(f"Generated at: {linkedin_post.generated_at}")
-                print("-" * 50)
-                print(linkedin_post.content)
-                print("-" * 50)
-                print(f"Status: {'Published' if linkedin_post.published else 'Not published'}")
-                if linkedin_post.scheduled_for:
-                    print(f"Scheduled for: {linkedin_post.scheduled_for}")
-                print()
-            else:
-                logger.error(f"Failed to generate LinkedIn post for topic {i}")
-        
-        # Schedule the posts over the next 3 days
-        if linkedin_posts:
-            scheduled_posts = schedule_linkedin_posts(linkedin_posts)
-            
-            # Display scheduled posts
-            print("\nScheduled LinkedIn Posts:")
-            print("=" * 50)
-            for i, post in enumerate(scheduled_posts, 1):
-                print(f"{i}. {post.topic_title}")
-                print(f"   Scheduled for: {post.scheduled_for}")
-            print("=" * 50)
+    # Process newsletter and get scheduled posts
+    scheduled_posts = process_newsletter_to_scheduled_posts(num_topics=2, schedule_days=3)
+    
+    # Display scheduled posts
+    if scheduled_posts:
+        print("\nScheduled LinkedIn Posts:")
+        print("=" * 50)
+        for i, post in enumerate(scheduled_posts, 1):
+            print(f"{i}. {post.topic_title}")
+            print(f"   Scheduled for: {post.scheduled_for}")
+            print("-" * 50)
+            print(post.content)
+            print("-" * 50)
+        print("=" * 50)
         
         elapsed_time = time.time() - start_time
         logger.info(f"Total processing time: {elapsed_time:.2f} seconds")
-        
     else:
-        logger.error("Failed to process newsletter")
-        print("Failed to process newsletter")
+        logger.error("Failed to process newsletter to scheduled posts")
+        print("Failed to process newsletter to scheduled posts")
         
     logger.info("Newsletter agent completed")
 
