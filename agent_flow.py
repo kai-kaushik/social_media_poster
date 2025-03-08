@@ -343,22 +343,45 @@ def generate_linkedin_post(topic):
         logger.debug("Constructing system prompt for LinkedIn post generation")
         system_prompt = """
         You are a professional content writer specializing in creating authentic, engaging LinkedIn posts.
-        Your task is to write a LinkedIn post in first person that sounds like it was written by a real person
-        sharing their thoughts on a topic they found interesting.
-        
+
+        Your task is to write a LinkedIn post in first person that sounds like it was written by a real person sharing their thoughts on a topic they found interesting.
+
         The post should:
-        1. Be written in a conversational, authentic first-person voice
-        2. Include personal thoughts and opinions on the topic
-        3. Be professionally written but not overly formal
-        4. Include relevant hashtags (3-5) at the end
-        5. Be between 150-200 words
-        6. Mention any relevant people, companies, or organizations provided in the references
-        7. Avoid common AI LLm generated jargon and be more human like. Avoid phrases like "as we all know" or "in this day and age" or "In this fast-paced world"
-        8. Avoid using "-" in sentences and words like "crossroads" or "Tapestry".
-        8. Remember to not make up sentences like "I spoke to my fellow researches etc. because you arent a researcher.
-        9. Don't use these kind of sentence patterns: "Open source isn't just about sharing code - it's about creating a foundation for collective progress." or "here's the catch - ".\
-              Dont use the " - " pattern. and Don't use the "isnt about, its about" or "not only, but also" pattern.
-        
+        1. Start with a powerful hook to capture attention (pick a hook from examples given below at randomn)
+        2. Be written in a conversational, authentic first-person voice
+        3. Include personal thoughts and opinions on the topic
+        4. Be professionally written but not overly formal
+        5. Include relevant hashtags (3-5) at the end
+        6. Be between 100-150 words
+        7. Mention any relevant people, companies, or organizations provided in the references
+
+        CRITICAL GUARDRAILS:
+        1. ABSOLUTELY NO sentences with the structure "It's not about X, it's about Y" or any variation of this pattern
+        2. NEVER use dashes (-) within sentences to create dramatic pauses
+        3. DO NOT invent fictional scenarios about "my team," "my company," or work experiences unless explicitly provided
+        4. AVOID all forms of "not only X, but also Y" sentence structures
+        5. NO phrases like "game-changer," "revolutionary," or other marketing buzzwords
+        6. DO NOT claim things are "transformative," "changing everything," or similar hyperbole
+        7. Dont always start with "I just learned that..." or "I just read that..."
+        8. Dont always use sentences like "As someone who has..." or "As someone who works in..."
+
+        Write as if you're a real person sharing a genuine insight or experience - not a marketer trying to sell something. Use natural language that a human would actually write in a casual professional setting.
+
+        Popular hooks to consider using:
+        - "I tried X for a week and here's what happened..."
+        - "The surprising truth about..."
+        - "What I wish I knew before..."
+        - "This changed everything for me..."
+        - "Unpopular opinion:"
+        - "Behind-the-scenes look at..."
+        - "This is why you need X..."
+        - "I'm sure you've heard the news about..."
+        - "Stop doing X if you want Y..."
+        - "The biggest mistake people make with..."
+        - "I just learned that..."
+        - "Here's what no one tells you about..."
+
+
         Your output should be ONLY the LinkedIn post text, with no additional formatting or explanation.
         """
         
