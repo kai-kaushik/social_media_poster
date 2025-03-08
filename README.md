@@ -10,6 +10,7 @@ An automated tool that monitors a Gmail inbox for AI news from ButtonDown newsle
 - **Intelligent Scheduling**: Distributes posts over a 3-day period at optimal times for engagement
 - **Automated Posting**: Handles the entire workflow from email to published LinkedIn post
 - **Pydantic AI Integration**: Uses Pydantic AI for structured agent development with type safety
+- **Interactive Mode**: Choose which posts to publish immediately from the command line
 
 ## Prerequisites
 
@@ -27,7 +28,7 @@ This project consists of several key components:
 2. **LinkedIn Authentication** (`linkedin_auth.py`): Manages LinkedIn OAuth authentication flow
 3. **Gmail Processing** (`google_main.py`): Fetches and processes emails from specified senders
 4. **LinkedIn Posting** (`linkedin_main.py`): Posts content to LinkedIn via their API
-5. **Post Generation Agent** (`agent.py`): Pydantic AI agent that extracts topics and generates posts
+5. **Agent Flow** (`agent_flow.py`): Main script that orchestrates the entire process
 6. **Scheduler** (`scheduler.py`): Manages background operations for continuous posting
 
 ## Installation
@@ -110,19 +111,58 @@ The first time you run any component, you'll need to authenticate:
 
 OAuth tokens will be saved locally for future use.
 
-### Running the Agent
+### Running the Agent Flow
+
+The main script is `agent_flow.py`, which can be run with various command-line options:
 
 ```bash
-python agent.py
+python agent_flow.py [options]
 ```
 
-The agent will:
-1. Fetch the latest email from your specified newsletter sender
-2. Extract 5-6 interesting topics using Claude
-3. Generate thoughtful LinkedIn posts for each topic
-4. Schedule the posts over a 3-day period
-5. Give you the option to post one immediately
-6. Save all generated posts to a JSON file
+#### Command Line Options
+
+- `--topics N`: Number of topics to extract (default: 5)
+- `--days N`: Number of days to schedule posts over (default: 3)
+- `--sender EMAIL`: Email address of the newsletter sender (default: uses value from .env file)
+- `--use-saved`: Use previously saved posts instead of generating new ones
+- `--quiet`: Disable console logging (only log to file)
+
+#### Examples
+
+Generate new posts from a specific sender:
+```bash
+python agent_flow.py --sender newsletter@example.com --topics 6
+```
+
+Use previously saved posts:
+```bash
+python agent_flow.py --use-saved
+```
+
+Generate fewer topics and schedule over more days:
+```bash
+python agent_flow.py --topics 3 --days 5
+```
+
+#### What Happens When You Run It
+
+When you run the script:
+
+1. It either loads previously saved posts (if `--use-saved` is specified) or generates new ones by:
+   - Fetching the latest email from the specified sender
+   - Extracting interesting topics using Claude
+   - Generating LinkedIn posts for each topic
+   - Scheduling these posts over the specified number of days
+
+2. It displays all the scheduled posts with their content and scheduled times
+
+3. It shows any posts that are scheduled for today
+
+4. It saves the generated posts to `scheduled_posts.json` (if they're newly generated)
+
+5. It prompts you to choose a post to publish immediately or exit
+
+6. If you choose a post, it asks for confirmation before publishing it to LinkedIn
 
 ### Using the Scheduler
 
@@ -150,12 +190,12 @@ Start-Process -NoNewWindow python "scheduler.py"
 
 ### Customization
 
-You can customize the agent by editing `agent.py`:
+You can customize the agent by editing the configuration parameters:
 
-- Change the `user_interests` list to match your professional interests
-- Modify `user_first_name` and `user_writing_style` to match your identity
-- Adjust the `days_to_spread` parameter to change the posting schedule
-- Edit the posting times by changing the `posting_times` list
+- Change the sender email to match your newsletter source
+- Adjust the number of topics to extract
+- Modify the scheduling period to match your posting frequency
+- Edit the posting times by changing the business hours in the code
 
 ## Advanced Features
 
@@ -164,6 +204,7 @@ You can customize the agent by editing `agent.py`:
 By default, posts are scheduled across 3 days at optimal times:
 - 9:00 AM: When people check LinkedIn in the morning
 - 12:00 PM: During lunch breaks
+- 3:00 PM: Mid-afternoon engagement
 - 5:00 PM: End of workday engagement
 
 ### Post Format
@@ -171,8 +212,15 @@ By default, posts are scheduled across 3 days at optimal times:
 Each post is carefully crafted to:
 - Sound authentic and conversational
 - Include your perspective on the topic
-- End with an engaging question to encourage comments
-- Be the optimal length for LinkedIn engagement (150-250 words)
+- End with relevant hashtags for better discoverability
+- Be the optimal length for LinkedIn engagement (150-200 words)
+
+### Saved Posts Management
+
+The tool saves all generated posts to a JSON file (`scheduled_posts.json`), allowing you to:
+- Track which posts have been published
+- Reuse previously generated posts without calling the API again
+- Maintain a history of your LinkedIn content
 
 ## Troubleshooting
 
